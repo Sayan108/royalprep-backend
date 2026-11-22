@@ -9,11 +9,12 @@ Use Node 22 or newer and PostgreSQL.
 1. Run `npm ci`.
 2. Copy `.env.example` to `.env` and configure `DATABASE_URL`, `ADMIN_PASSWORD`, `ADMIN_EMAIL` and `SESSION_SECRET`. Never commit credentials.
 3. Back up the database, then run `node --import tsx scripts/migrate-postgres.ts` to apply the versioned migrations. Migrations 007 through 010 are required by the current features.
-4. Run `npm run dev`. The example binds to `127.0.0.1:4000`.
+4. Run `npm run seed` to insert the repeatable demo question bank, hero, chapters, and student activity. The command is idempotent and uses `DATABASE_URL` directly; run migrations first.
+5. Run `npm run dev`. The example binds to `127.0.0.1:4000`.
 
 Run `npm test` and `npm run build` to test and compile. Tests use an in-memory PostgreSQL emulator; real PostgreSQL migrations, locking, concurrency and backup/restore still require verification.
 
-The development-only verification service logs codes to the backend console. Anyone with access to those logs can sign in. Do not expose this service publicly or use it with real users' data. Sessions are process-local. Student and admin production sign-in are unavailable until production authentication is implemented.
+The development-only verification service logs codes to the backend console. When `DUMMY_OTP_ENABLED=true` in development, `123456` is also accepted for student and admin OTP challenges. Anyone with access to the service can sign in. Do not expose this service publicly or use it with real users' data. Sessions are process-local. Student and admin production sign-in are unavailable until production authentication is implemented.
 
 Account deactivation is a soft deletion that retains all records. Older backend versions do not enforce it; do not run or roll back to those versions without separately blocking deleted accounts.
 
