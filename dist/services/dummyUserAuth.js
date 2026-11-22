@@ -5,7 +5,6 @@ const sessionLifetime = 8 * 60 * 60_000;
 const demoOtp = '123456';
 export function createDummyUserAuth(enabled, postgres, emailService) {
     const challenges = new Map();
-    const sessions = new Map();
     const requestOtp = async (req, res) => {
         res.set('Cache-Control', 'no-store');
         if (!enabled) {
@@ -67,11 +66,8 @@ export function createDummyUserAuth(enabled, postgres, emailService) {
             return;
         }
         const expiresAt = Date.now() + sessionLifetime;
-        for (const [token, session] of sessions)
-            if (session.expiresAt <= Date.now())
-                sessions.delete(token);
         const token = randomBytes(32).toString('base64url');
-        sessions.set(token, { email, expiresAt });
+        await postgres.query('INSERT INTO student_sessions (token, email, expires_at) VALUES ($1,$2,$3)', [token, email, new Date(expiresAt)]);
         res.json({ token, user: { email }, expiresAt });
     };
     const requireStudent = async (req, res, next) => {
@@ -80,16 +76,16 @@ export function createDummyUserAuth(enabled, postgres, emailService) {
             return;
         }
         const token = req.headers.authorization?.match(/^Bearer ([A-Za-z0-9_-]{43})$/)?.[1];
-        const session = token ? sessions.get(token) : undefined;
-        if (!token || !session || session.expiresAt <= Date.now()) {
-            if (token)
-                sessions.delete(token);
+        const result = token ? await postgres.query(`SELECT email, EXTRACT(EPOCH FROM expires_at) * 1000 AS "expiresAt"
+       FROM student_sessions WHERE token=$1 AND revoked_at IS NULL AND expires_at > now()`, [token]) : { rows: [] };
+        const session = result.rows[0];
+        if (!token || !session) {
             res.status(401).json({ error: 'Sign in to your student account.' });
             return;
         }
         const account = await postgres.query('SELECT deleted_at FROM student_accounts WHERE email = $1', [session.email]);
         if (!account.rows[0] || account.rows[0].deleted_at !== null) {
-            sessions.delete(token);
+            await postgres.query('UPDATE student_sessions SET revoked_at=now() WHERE token=$1', [token]);
             res.status(401).json({ error: 'Sign in to your student account.' });
             return;
         }
@@ -101,8 +97,8 @@ export function createDummyUserAuth(enabled, postgres, emailService) {
         const { email, expiresAt } = res.locals.student;
         res.json({ user: { email }, expiresAt });
     };
-    const logout = (_req, res) => {
-        sessions.delete(res.locals.studentToken);
+    const logout = async (_req, res) => {
+        await postgres.query('UPDATE student_sessions SET revoked_at=now() WHERE token=$1', [res.locals.studentToken]);
         res.json({ message: 'Signed out.' });
     };
     const deleteAccount = async (req, res) => {
@@ -117,9 +113,7 @@ export function createDummyUserAuth(enabled, postgres, emailService) {
             return;
         }
         challenges.delete(email);
-        for (const [token, session] of sessions)
-            if (session.email === email)
-                sessions.delete(token);
+        await postgres.query('UPDATE student_sessions SET revoked_at=now() WHERE email=$1 AND revoked_at IS NULL', [email]);
         res.json({ message: 'Your account has been deactivated. Your records are retained.' });
     };
     return { requestOtp, verifyOtp, requireStudent, getSession, logout, deleteAccount };

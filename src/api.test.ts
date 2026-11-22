@@ -19,7 +19,7 @@ async function createTestApi(t: TestContext, config: ApiConfig) {
   const db = newDb()
   db.public.registerFunction({ name: 'jsonb_typeof', args: ['jsonb'], returns: 'text', implementation: value => Array.isArray(value) ? 'array' : typeof value })
   db.public.registerFunction({ name: 'jsonb_array_length', args: ['jsonb'], returns: 'integer', implementation: value => value.length })
-  for (const migration of ['001_questions.sql', '002_hero.sql', '003_study_plans.sql', '004_custom_attempts.sql', '005_flashcards.sql', '006_student_accounts.sql', '007_chapters.sql', '008_student_soft_deletion.sql', '009_chapter_publications.sql', '010_practice_answers.sql']) {
+  for (const migration of ['001_questions.sql', '002_hero.sql', '003_study_plans.sql', '004_custom_attempts.sql', '005_flashcards.sql', '006_student_accounts.sql', '007_chapters.sql', '008_student_soft_deletion.sql', '009_chapter_publications.sql', '010_practice_answers.sql', '011_orientation_guides.sql', '012_learning_products.sql', '013_sessions_notifications.sql']) {
     db.public.none(await readFile(new URL(`../migrations/${migration}`, import.meta.url), 'utf8'))
   }
   const { Pool } = db.adapters.createPg()
@@ -43,8 +43,48 @@ async function signInStudent(api: ReturnType<typeof request>, email = 'student@e
 }
 
 test('health checks PostgreSQL and identifies it as the application database', async t => {
-  const { api } = await createTestApi(t, { adminPassword: 'test-password-long', secret: 'secret'.repeat(10) })
+  const { api } = await createTestApi(t, { adminPassword: 'test-password-long', secret: 'secret'.repeat(10), adminEmail, dummyOtpEnabled: true })
   assert.deepEqual((await api.get('/api/health')).body, { ok: true, storage: 'postgresql' })
+})
+
+test('orientation guide drafts publish publicly and reject stale edits', async t => {
+  const { api } = await createTestApi(t, { adminPassword: 'test-password-long', secret: 'secret'.repeat(10), adminEmail, dummyOtpEnabled: true })
+  assert.equal((await api.get('/api/public/orientation-guide')).status, 404)
+  const login = await loginAdmin(api)
+  assert.equal(login.status, 200, JSON.stringify(login.body))
+  const auth = { Authorization: 'Bearer ' + login.body.token }
+  const content = {
+    title: 'How to prepare',
+    intro: 'A practical starting point.',
+    sections: [{ id: randomUUID(), title: 'Start here', body: 'Review the syllabus.' }],
+  }
+  const saved = await api.put('/api/admin/content/orientation-guide/draft').set(auth).send({ expectedRevision: 0, content })
+  assert.equal(saved.status, 200)
+  assert.equal((await api.post('/api/admin/content/orientation-guide/publish').set(auth).send({ expectedRevision: 1 })).status, 200)
+  assert.equal((await api.get('/api/public/orientation-guide')).body.content.title, content.title)
+  assert.equal((await api.put('/api/admin/content/orientation-guide/draft').set(auth).send({ expectedRevision: 0, content })).status, 409)
+})
+
+test('daily challenges and learning resources persist student progress', async t => {
+  const { api, pool } = await createTestApi(t, { adminPassword: 'test-password-long', secret: 'secret'.repeat(10), adminEmail, dummyOtpEnabled: true })
+  for (let index = 1; index <= 5; index++) {
+    await pool.query(
+      `INSERT INTO questions (id, version, chapter, published, stem, options, correct, explanation, source)
+       VALUES ($1,1,'Daily',true,$2,$3::jsonb,0,'Correct','test')`,
+      [`daily-test-${index}`, `Daily question ${index}`, JSON.stringify(['Correct', 'Wrong', 'Wrong', 'Wrong'])],
+    )
+  }
+  await pool.query(`INSERT INTO learning_resources (id, kind, title, summary, body, published)
+    VALUES ('aaaaaaaa-1111-4111-8111-111111111111','revision-pack','Test pack','Summary','Body',true)`)
+  assert.equal((await api.get('/api/public/learning-resources')).body.length, 1)
+  const student = await signInStudent(api)
+  const daily = await api.get('/api/student/daily-quiz').set(student)
+  assert.equal(daily.status, 200)
+  const answers = Object.fromEntries(daily.body.questions.map((question: { id: string }) => [question.id, 0]))
+  const submitted = await api.post('/api/student/daily-quiz/submit').set(student).send({ answers })
+  assert.equal(submitted.body.score, 5, JSON.stringify({ daily: daily.body, submitted: submitted.body, answers }))
+  assert.equal((await api.put('/api/student/saved-resources/aaaaaaaa-1111-4111-8111-111111111111').set(student).send({ saved: true })).body.saved, true)
+  assert.equal((await api.get('/api/student/saved-resources').set(student)).body.length, 1)
 })
 
 test('chapter publication migration records only the known live revision', async () => {

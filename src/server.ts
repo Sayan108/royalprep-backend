@@ -1,6 +1,7 @@
 import 'dotenv/config'
 import pg from 'pg'
 import { createApp } from './app.js'
+import { attachNotificationWebSocket } from './realtime/notificationWebSocket.js'
 
 const { ADMIN_PASSWORD, SESSION_SECRET, DATABASE_URL } = process.env
 if (!ADMIN_PASSWORD || ADMIN_PASSWORD.length < 12 || !SESSION_SECRET || SESSION_SECRET.length < 32) {
@@ -16,6 +17,10 @@ const postgres = new pg.Pool({ connectionString: DATABASE_URL })
 await postgres.query('SELECT 1 FROM questions LIMIT 0')
 await postgres.query('SELECT 1 FROM question_reports LIMIT 0')
 await postgres.query('SELECT 1 FROM hero_state LIMIT 0')
+await postgres.query('SELECT 1 FROM orientation_guide_state LIMIT 0')
+await postgres.query('SELECT 1 FROM learning_resources LIMIT 0')
+await postgres.query('SELECT 1 FROM student_sessions LIMIT 0')
+await postgres.query('SELECT 1 FROM notifications LIMIT 0')
 await postgres.query('SELECT 1 FROM student_study_plans LIMIT 0')
 await postgres.query('SELECT 1 FROM custom_attempts LIMIT 0')
 await postgres.query('SELECT 1 FROM student_flashcards LIMIT 0')
@@ -31,6 +36,9 @@ const app = createApp({ adminPassword: ADMIN_PASSWORD, secret: SESSION_SECRET, a
 const port = Number(process.env.PORT ?? 4000)
 const listening = () => console.log('RoyalPrep API listening on port ' + port)
 const server = process.env.HOST ? app.listen(port, process.env.HOST, listening) : app.listen(port, listening)
+const closeNotifications = attachNotificationWebSocket(server, postgres)
 async function stop() { server.close(async () => { await postgres.end(); process.exit(0) }) }
+process.once('SIGTERM', closeNotifications)
+process.once('SIGINT', closeNotifications)
 process.on('SIGTERM', stop)
 process.on('SIGINT', stop)

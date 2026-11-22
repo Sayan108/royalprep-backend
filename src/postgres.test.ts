@@ -19,6 +19,7 @@ test('PostgreSQL flashcards and review events persist across requests', async ()
   db.public.none(await readFile(new URL('../migrations/005_flashcards.sql', import.meta.url), 'utf8'))
   db.public.none(await readFile(new URL('../migrations/006_student_accounts.sql', import.meta.url), 'utf8'))
   db.public.none(await readFile(new URL('../migrations/008_student_soft_deletion.sql', import.meta.url), 'utf8'))
+  db.public.none(await readFile(new URL('../migrations/013_sessions_notifications.sql', import.meta.url), 'utf8'))
   const { Pool } = db.adapters.createPg()
   const pool = new Pool()
   try {
@@ -42,6 +43,7 @@ test('PostgreSQL custom mocks survive application restart', async () => {
   db.public.none(await readFile(new URL('../migrations/004_custom_attempts.sql', import.meta.url), 'utf8'))
   db.public.none(await readFile(new URL('../migrations/006_student_accounts.sql', import.meta.url), 'utf8'))
   db.public.none(await readFile(new URL('../migrations/008_student_soft_deletion.sql', import.meta.url), 'utf8'))
+  db.public.none(await readFile(new URL('../migrations/013_sessions_notifications.sql', import.meta.url), 'utf8'))
   const { Pool } = db.adapters.createPg()
   const pool = new Pool()
   try {
@@ -72,6 +74,7 @@ test('PostgreSQL study plans persist per student and reject stale versions', asy
   db.public.none(await readFile(new URL('../migrations/003_study_plans.sql', import.meta.url), 'utf8'))
   db.public.none(await readFile(new URL('../migrations/006_student_accounts.sql', import.meta.url), 'utf8'))
   db.public.none(await readFile(new URL('../migrations/008_student_soft_deletion.sql', import.meta.url), 'utf8'))
+  db.public.none(await readFile(new URL('../migrations/013_sessions_notifications.sql', import.meta.url), 'utf8'))
   const { Pool } = db.adapters.createPg()
   const pool = new Pool()
   try {
@@ -98,6 +101,8 @@ test('PostgreSQL-backed question API persists questions, versions and reports', 
   db.public.none(await readFile(new URL('../migrations/006_student_accounts.sql', import.meta.url), 'utf8'))
   db.public.none(await readFile(new URL('../migrations/008_student_soft_deletion.sql', import.meta.url), 'utf8'))
   db.public.none(await readFile(new URL('../migrations/010_practice_answers.sql', import.meta.url), 'utf8'))
+  db.public.none(await readFile(new URL('../migrations/011_orientation_guides.sql', import.meta.url), 'utf8'))
+  db.public.none(await readFile(new URL('../migrations/013_sessions_notifications.sql', import.meta.url), 'utf8'))
   const { Pool } = db.adapters.createPg()
   const pool = new Pool()
   try {

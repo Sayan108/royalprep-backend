@@ -5,6 +5,8 @@ import { z } from 'zod'
 import { chapterContentSchema } from '../src/models/chapter.js'
 import { flashcardInputSchema } from '../src/models/flashcard.js'
 import { heroContentSchema } from '../src/models/hero.js'
+import { orientationGuideContentSchema } from '../src/models/orientationGuide.js'
+import { deckSchema, resourceInputSchema } from '../src/models/learningProducts.js'
 import { questionInputSchema, type Question } from '../src/models/question.js'
 import { studyPlanSchema } from '../src/models/studyPlan.js'
 import { seedQuestions } from './questions.js'
@@ -34,6 +36,54 @@ const hero = heroContentSchema.parse({
   primaryPath: '/practice',
   secondaryLabel: 'Build a study plan',
   secondaryPath: '/study-plan',
+})
+
+const orientationGuide = orientationGuideContentSchema.parse({
+  title: 'Your RoyalPrep orientation guide',
+  intro: 'Use this guide to turn the RoyalPrep resources into a consistent preparation routine.',
+  sections: [
+    {
+      id: '77777777-7777-4777-8777-777777777771',
+      title: '1. Set your target',
+      body: 'Choose your target exam date and create a realistic weekly study plan. Leave time for revision and mock exams.',
+    },
+    {
+      id: '77777777-7777-4777-8777-777777777772',
+      title: '2. Learn the chapters',
+      body: 'Start with the chapter library and read the published notes. Use practice questions to check your understanding immediately.',
+    },
+    {
+      id: '77777777-7777-4777-8777-777777777773',
+      title: '3. Retain what you learn',
+      body: 'Create flashcards for difficult facts, review your mistakes and return to weak chapters each week.',
+    },
+    {
+      id: '77777777-7777-4777-8777-777777777774',
+      title: '4. Measure your progress',
+      body: 'Complete custom mocks under timed conditions, review the analytics and adjust your study plan based on the results.',
+    },
+  ],
+})
+
+const learningResources = [
+  ['88888888-8888-4888-8888-888888888881', 'revision-pack', 'Core revision pack', 'A compact review of high-yield topics.', 'Review the key facts, then complete a timed practice set.'],
+  ['88888888-8888-4888-8888-888888888882', 'radio', 'RoyalPrep Radio: exam mindset', 'Audio-style recall notes for a focused commute.', 'Use this recall script to revisit prioritisation, timing and exam-day routines.'],
+  ['88888888-8888-4888-8888-888888888883', 'masterclass', 'Masterclass: anatomy patterns', 'A structured lesson on recognising common anatomy patterns.', 'Start with relationships, connect them to clinical signs, then test yourself without notes.'],
+  ['88888888-8888-4888-8888-888888888884', 'mixed-bag', 'Mixed Bag: rapid recall', 'A mixed set of short recall prompts.', 'Name the structure, state the mechanism and give one clinical application for each prompt.'],
+  ['88888888-8888-4888-8888-888888888885', 'fawzia-sheet', 'Fawzia sheet: last-minute facts', 'A quick-reference sheet for final revision.', 'Use this only after understanding the underlying chapter content.'],
+  ['88888888-8888-4888-8888-888888888886', 'last-week', 'Last week plan', 'A focused seven-day revision sequence.', 'Day 1-4: weak topics. Day 5: mixed practice. Day 6: full mock. Day 7: light review and rest.'],
+  ['88888888-8888-4888-8888-888888888887', 'exam-eve', 'Exam eve checklist', 'Practical reminders for the evening before the exam.', 'Prepare identification, route, timing and essentials. Stop heavy study early and sleep.'],
+].map(([id, kind, title, summary, body]) => ({ id, ...resourceInputSchema.parse({ kind, title, summary, body, published: true }) }))
+
+const sharedDeck = deckSchema.parse({
+  id: '99999999-9999-4999-8999-999999999991',
+  title: 'Shared high-yield recall',
+  description: 'Starter flashcards for the most common revision prompts.',
+  published: true,
+  cards: [
+    { id: '99999999-9999-4999-8999-999999999992', front: 'What nerve is injured in a surgical neck fracture?', back: 'The axillary nerve.' },
+    { id: '99999999-9999-4999-8999-999999999993', front: 'What is the main extracellular cation?', back: 'Sodium.' },
+  ],
 })
 
 const chapters = [
@@ -119,6 +169,52 @@ try {
     )
   }
 
+  const orientationState = await client.query<{ current_revision: number }>(
+    'SELECT current_revision FROM orientation_guide_state WHERE singleton=true FOR UPDATE',
+  )
+  if (!orientationState.rows[0]) throw new Error('Orientation guide state is missing; run migrations before seeding.')
+  if (orientationState.rows[0].current_revision === 0) {
+    await client.query(
+      'INSERT INTO orientation_guide_revisions (revision, content) VALUES (1, $1::jsonb) ON CONFLICT (revision) DO NOTHING',
+      [JSON.stringify(orientationGuide)],
+    )
+    await client.query(
+      'UPDATE orientation_guide_state SET current_revision=1, draft_revision=1, published_revision=1 WHERE singleton=true',
+    )
+    await client.query(
+      `INSERT INTO orientation_guide_audit_events (id, action, revision, actor)
+       VALUES ($1, 'publish', 1, 'seed') ON CONFLICT (id) DO NOTHING`,
+      ['seed-orientation-guide-publish-001'],
+    )
+  }
+
+  for (const resource of learningResources) {
+    await client.query(
+      `INSERT INTO learning_resources (id, kind, title, summary, body, published)
+       VALUES ($1,$2,$3,$4,$5,$6)
+       ON CONFLICT (id) DO UPDATE SET kind=EXCLUDED.kind,title=EXCLUDED.title,summary=EXCLUDED.summary,body=EXCLUDED.body,published=EXCLUDED.published,updated_at=now()`,
+      [resource.id, resource.kind, resource.title, resource.summary, resource.body, resource.published],
+    )
+  }
+  await client.query(
+    `INSERT INTO notifications (id, title, body)
+     VALUES ($1,$2,$3) ON CONFLICT (id) DO UPDATE SET title=EXCLUDED.title,body=EXCLUDED.body`,
+    ['aaaaaaaa-2222-4222-8222-222222222222', 'Welcome to RoyalPrep', 'Your daily quiz, mock and learning resources are ready.'],
+  )
+  await client.query(
+    `INSERT INTO shared_flashcard_decks (id, title, description, published)
+     VALUES ($1,$2,$3,$4)
+     ON CONFLICT (id) DO UPDATE SET title=EXCLUDED.title,description=EXCLUDED.description,published=EXCLUDED.published,updated_at=now()`,
+    [sharedDeck.id, sharedDeck.title, sharedDeck.description, sharedDeck.published],
+  )
+  for (const card of sharedDeck.cards) {
+    await client.query(
+      `INSERT INTO shared_flashcards (id, deck_id, front, back) VALUES ($1,$2,$3,$4)
+       ON CONFLICT (id) DO UPDATE SET front=EXCLUDED.front,back=EXCLUDED.back`,
+      [card.id, sharedDeck.id, card.front, card.back],
+    )
+  }
+
   for (const [index, content] of chapters.entries()) {
     const id = Object.values(chapterIds)[index]
     await client.query(
@@ -175,6 +271,33 @@ try {
   )
 
   const attemptQuestions = seededQuestions.slice(0, 3)
+  const dailyQuestions = seededQuestions.slice(0, 5)
+  for (const kind of ['quiz', 'mock'] as const) {
+    await client.query(
+      `INSERT INTO daily_challenges (challenge_date, kind, question_ids, duration_minutes)
+       VALUES (CURRENT_DATE, $1, $2::jsonb, $3)
+       ON CONFLICT (challenge_date, kind) DO UPDATE SET question_ids=EXCLUDED.question_ids,duration_minutes=EXCLUDED.duration_minutes`,
+      [kind, JSON.stringify(dailyQuestions.map(question => question.id)), kind === 'quiz' ? 10 : 60],
+    )
+  }
+  await client.query(
+    `INSERT INTO daily_quiz_attempts (owner_email, challenge_date, answers, submitted_at)
+     VALUES ($1, CURRENT_DATE, $2::jsonb, now())
+     ON CONFLICT (owner_email, challenge_date) DO UPDATE SET answers=EXCLUDED.answers,submitted_at=EXCLUDED.submitted_at`,
+    [demoEmail, JSON.stringify(Object.fromEntries(dailyQuestions.map((question, index) => [question.id, index % 4])))],
+  )
+  await client.query(
+    `INSERT INTO daily_mock_results (owner_email, challenge_date, answers, score, submitted_at)
+     VALUES ($1, CURRENT_DATE, $2::jsonb, $3, now())
+     ON CONFLICT (owner_email, challenge_date) DO UPDATE SET answers=EXCLUDED.answers,score=EXCLUDED.score,submitted_at=EXCLUDED.submitted_at`,
+    [demoEmail, JSON.stringify(Object.fromEntries(dailyQuestions.map(question => [question.id, question.correct]))), dailyQuestions.length],
+  )
+  await client.query(
+    `INSERT INTO saved_learning_resources (owner_email, resource_id)
+     VALUES ($1,$2) ON CONFLICT DO NOTHING`,
+    [demoEmail, learningResources[0].id],
+  )
+
   const submittedAttempt = {
     id: '55555555-5555-4555-8555-555555555551',
     requestId: '66666666-6666-4666-8666-666666666661',
@@ -216,7 +339,7 @@ try {
   )
 
   await client.query('COMMIT')
-  console.log(`Seeded ${seededQuestions.length} questions, hero content, ${chapters.length} chapters, and demo student activity.`)
+  console.log(`Seeded ${seededQuestions.length} questions, hero content, orientation guide, ${learningResources.length} learning resources, shared flashcards, daily challenges, ${chapters.length} chapters, and demo student activity.`)
 } catch (error) {
   await client.query('ROLLBACK')
   throw error
