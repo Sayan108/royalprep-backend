@@ -14,18 +14,32 @@ export function attachNotificationWebSocket(server: Server, pool: Pool) {
     socket.send(JSON.stringify({ type: 'connected' }))
     socket.on('close', () => sockets.delete(socket))
   })
-  let latest = new Date(0)
+  let latest: { createdAt: string; id: string } | null = null
+  let polling = false
+  let closed = false
   const poll = setInterval(async () => {
-    const result = await pool.query<{ id: string; title: string; body: string; createdAt: Date }>(
-      `SELECT id, title, body, created_at AS "createdAt" FROM notifications WHERE created_at > $1 ORDER BY created_at ASC`,
-      [latest],
-    )
-    for (const notification of result.rows) {
-      latest = new Date(notification.createdAt)
-      const message = JSON.stringify({ type: 'notification', notification })
-      for (const socket of sockets) if (socket.readyState === WebSocket.OPEN) socket.send(message)
+    if (polling) return
+    polling = true
+    try {
+      const result = await pool.query<{ id: string; title: string; body: string; createdAt: Date; cursorCreatedAt: string }>(
+        `SELECT id, title, body, created_at AS "createdAt", created_at::text AS "cursorCreatedAt"
+         FROM notifications
+         WHERE $1::timestamptz IS NULL OR (created_at, id) > ($1::timestamptz, $2::uuid)
+         ORDER BY created_at ASC, id ASC`,
+        [latest?.createdAt ?? null, latest?.id ?? null],
+      )
+      if (closed) return
+      for (const { cursorCreatedAt, ...notification } of result.rows) {
+        latest = { createdAt: cursorCreatedAt, id: notification.id }
+        const message = JSON.stringify({ type: 'notification', notification })
+        for (const socket of sockets) if (socket.readyState === WebSocket.OPEN) socket.send(message)
+      }
+    } catch (error) {
+      console.error('Failed to poll notifications:', error)
+    } finally {
+      polling = false
     }
   }, 2000)
-  const close = () => { clearInterval(poll); webSocketServer.close(); for (const socket of sockets) socket.close() }
+  const close = () => { closed = true; clearInterval(poll); webSocketServer.close(); for (const socket of sockets) socket.close() }
   return close
 }
