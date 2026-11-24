@@ -1,6 +1,10 @@
-import { z } from 'zod';
-const internalPath = z.string().max(200).refine(value => /^\/(?![\/\\])[^\\\s]*$/.test(value), 'Use a safe internal path.');
-export const heroContentSchema = z.object({
+import { z } from "zod";
+const internalPath = z
+    .string()
+    .max(200)
+    .refine((value) => /^\/(?![\/\\])[^\\\s]*$/.test(value), "Use a safe internal path.");
+export const heroContentSchema = z
+    .object({
     eyebrow: z.string().trim().max(100),
     headline: z.string().trim().min(1).max(160),
     highlight: z.string().trim().max(100),
@@ -9,5 +13,6 @@ export const heroContentSchema = z.object({
     primaryPath: internalPath,
     secondaryLabel: z.string().trim().min(1).max(80),
     secondaryPath: internalPath,
-}).strict();
+})
+    .strict();
 export const revisionSchema = z.number().int().min(0).max(2_147_483_646);

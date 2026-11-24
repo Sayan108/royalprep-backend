@@ -17,7 +17,10 @@ export function createApp(config: {
 }) {
   const app = express();
   app.disable("x-powered-by");
-  app.use(helmet(), cors({ origin: "*" }), express.json({ limit: "150kb" }));
+  app.use(helmet(), cors({ origin: "*" }));
+  app.use("/api/admin/chapters", express.json({ limit: "2mb" }));
+  app.use("/api/admin/content/orientation-guide", express.json({ limit: "2mb" }));
+  app.use(express.json({ limit: "150kb" }));
   app.use("/api", createApiRouter(config));
   app.use(
     (
@@ -27,13 +30,11 @@ export function createApp(config: {
       _next: express.NextFunction,
     ) => {
       console.error(error.message);
-      res
-        .status(error.status ?? 500)
-        .json({
-          error: error.status
-            ? error.message
-            : "The request could not be completed.",
-        });
+      res.status(error.status ?? 500).json({
+        error: error.status
+          ? error.message
+          : "The request could not be completed.",
+      });
     },
   );
   return app;

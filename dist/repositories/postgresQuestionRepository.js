@@ -1,4 +1,4 @@
-const questionColumns = 'id, version, chapter, published, stem, options, correct, explanation, source';
+const questionColumns = "id, version, chapter, published, stem, options, correct, explanation, source";
 const reportColumns = 'id, question_id AS "questionId", question_version AS "questionVersion", question_stem AS "questionStem", message, created_at AS "createdAt"';
 function toQuestion(row) {
     const { source, ...question } = row;
@@ -6,17 +6,39 @@ function toQuestion(row) {
 }
 export async function insertQuestions(client, questions) {
     for (const question of questions) {
-        await client.query('INSERT INTO questions (id, version, chapter, published, stem, options, correct, explanation, source) VALUES ($1,$2,$3,$4,$5,$6::jsonb,$7,$8,$9)', [question.id, question.version, question.chapter, question.published, question.stem, JSON.stringify(question.options), question.correct, question.explanation, question.source ?? null]);
+        await client.query("INSERT INTO questions (id, version, chapter, published, stem, options, correct, explanation, source) VALUES ($1,$2,$3,$4,$5,$6::jsonb,$7,$8,$9)", [
+            question.id,
+            question.version,
+            question.chapter,
+            question.published,
+            question.stem,
+            JSON.stringify(question.options),
+            question.correct,
+            question.explanation,
+            question.source ?? null,
+        ]);
     }
 }
 export async function insertReport(client, report) {
-    await client.query('INSERT INTO question_reports (id, question_id, question_version, question_stem, message, created_at) VALUES ($1,$2,$3,$4,$5,$6)', [report.id, report.questionId, report.questionVersion, report.questionStem, report.message, report.createdAt]);
+    await client.query("INSERT INTO question_reports (id, question_id, question_version, question_stem, message, created_at) VALUES ($1,$2,$3,$4,$5,$6)", [
+        report.id,
+        report.questionId,
+        report.questionVersion,
+        report.questionStem,
+        report.message,
+        report.createdAt,
+    ]);
 }
 export function createPostgresQuestionRepository(pool) {
     return {
         async listQuestions(publishedOnly = false) {
-            const result = await pool.query(`SELECT ${questionColumns} FROM questions${publishedOnly ? ' WHERE published = true' : ''} ORDER BY sequence`);
+            const result = await pool.query(`SELECT ${questionColumns} FROM questions${publishedOnly ? " WHERE published = true" : ""} ORDER BY sequence`);
             return result.rows.map(toQuestion);
+        },
+        async listPracticeQuestions(chapter) {
+            const result = await pool.query(`SELECT id, version, chapter, stem, options FROM questions
+         WHERE published = true${chapter ? " AND chapter = $1" : ""} ORDER BY sequence`, chapter ? [chapter] : []);
+            return result.rows;
         },
         async readQuestion(id) {
             const result = await pool.query(`SELECT ${questionColumns} FROM questions WHERE id = $1`, [id]);
@@ -25,12 +47,12 @@ export function createPostgresQuestionRepository(pool) {
         async createQuestions(items) {
             const client = await pool.connect();
             try {
-                await client.query('BEGIN');
+                await client.query("BEGIN");
                 await insertQuestions(client, items);
-                await client.query('COMMIT');
+                await client.query("COMMIT");
             }
             catch (error) {
-                await client.query('ROLLBACK');
+                await client.query("ROLLBACK");
                 throw error;
             }
             finally {
@@ -38,7 +60,18 @@ export function createPostgresQuestionRepository(pool) {
             }
         },
         async updateQuestion(question, previous) {
-            const result = await pool.query('UPDATE questions SET version=$1, chapter=$2, published=$3, stem=$4, options=$5::jsonb, correct=$6, explanation=$7, source=$8 WHERE id=$9 AND version=$10', [question.version, question.chapter, question.published, question.stem, JSON.stringify(question.options), question.correct, question.explanation, question.source ?? null, question.id, previous]);
+            const result = await pool.query("UPDATE questions SET version=$1, chapter=$2, published=$3, stem=$4, options=$5::jsonb, correct=$6, explanation=$7, source=$8 WHERE id=$9 AND version=$10", [
+                question.version,
+                question.chapter,
+                question.published,
+                question.stem,
+                JSON.stringify(question.options),
+                question.correct,
+                question.explanation,
+                question.source ?? null,
+                question.id,
+                previous,
+            ]);
             return result.rowCount === 1;
         },
         async createReport(report) {
@@ -52,7 +85,10 @@ export function createPostgresQuestionRepository(pool) {
         },
         async listReports() {
             const result = await pool.query(`SELECT ${reportColumns} FROM question_reports ORDER BY created_at`);
-            return result.rows.map(row => ({ ...row, createdAt: Number(row.createdAt) }));
+            return result.rows.map((row) => ({
+                ...row,
+                createdAt: Number(row.createdAt),
+            }));
         },
     };
 }

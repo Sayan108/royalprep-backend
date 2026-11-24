@@ -1,11 +1,11 @@
-import { randomUUID } from 'node:crypto';
+import { randomUUID } from "node:crypto";
 export class ChapterConflict extends Error {
 }
 export class ChapterNotFound extends Error {
 }
 export function createChapterRepository(pool) {
     async function state(client, id, lock = false) {
-        const result = await client.query(`SELECT id, current_revision AS "currentRevision", draft_revision AS "draftRevision", published_revision AS "publishedRevision" FROM chapter_documents WHERE id=$1${lock ? ' FOR UPDATE' : ''}`, [id]);
+        const result = await client.query(`SELECT id, current_revision AS "currentRevision", draft_revision AS "draftRevision", published_revision AS "publishedRevision" FROM chapter_documents WHERE id=$1${lock ? " FOR UPDATE" : ""}`, [id]);
         return result.rows[0];
     }
     async function revision(client, id, number) {
@@ -15,13 +15,13 @@ export function createChapterRepository(pool) {
     async function transact(operation) {
         const client = await pool.connect();
         try {
-            await client.query('BEGIN');
+            await client.query("BEGIN");
             const result = await operation(client);
-            await client.query('COMMIT');
+            await client.query("COMMIT");
             return result;
         }
         catch (error) {
-            await client.query('ROLLBACK');
+            await client.query("ROLLBACK");
             throw error;
         }
         finally {
@@ -30,7 +30,7 @@ export function createChapterRepository(pool) {
     }
     function check(current, expected) {
         if (current.currentRevision !== expected)
-            throw new ChapterConflict('Chapter changed; reload before saving or publishing.');
+            throw new ChapterConflict("Chapter changed; reload before saving or publishing.");
     }
     async function published(client, id) {
         const current = await state(client, id);
@@ -57,13 +57,17 @@ export function createChapterRepository(pool) {
             const history = await pool.query(`SELECT r.revision, r.content, r.created_at AS "createdAt", p.published_at AS "publishedAt", p.source_revision AS "sourceRevision"
          FROM chapter_publications p JOIN chapter_revisions r ON r.chapter_id=p.chapter_id AND r.revision=p.revision
          WHERE p.chapter_id=$1 ORDER BY p.revision DESC`, [id]);
-            return { ...current, draft: await revision(pool, id, current.draftRevision), history: history.rows };
+            return {
+                ...current,
+                draft: await revision(pool, id, current.draftRevision),
+                history: history.rows,
+            };
         },
         async create(content) {
             return transact(async (client) => {
                 const id = randomUUID();
-                await client.query('INSERT INTO chapter_documents (id, current_revision, draft_revision) VALUES ($1, 1, 1)', [id]);
-                await client.query('INSERT INTO chapter_revisions (chapter_id, revision, content) VALUES ($1, 1, $2::jsonb)', [id, JSON.stringify(content)]);
+                await client.query("INSERT INTO chapter_documents (id, current_revision, draft_revision) VALUES ($1, 1, 1)", [id]);
+                await client.query("INSERT INTO chapter_revisions (chapter_id, revision, content) VALUES ($1, 1, $2::jsonb)", [id, JSON.stringify(content)]);
                 return id;
             });
         },
@@ -71,11 +75,11 @@ export function createChapterRepository(pool) {
             return transact(async (client) => {
                 const current = await state(client, id, true);
                 if (!current)
-                    throw new ChapterNotFound('Chapter not found.');
+                    throw new ChapterNotFound("Chapter not found.");
                 check(current, expected);
                 const next = current.currentRevision + 1;
-                await client.query('INSERT INTO chapter_revisions (chapter_id, revision, content) VALUES ($1, $2, $3::jsonb)', [id, next, JSON.stringify(content)]);
-                await client.query('UPDATE chapter_documents SET current_revision=$2, draft_revision=$2 WHERE id=$1', [id, next]);
+                await client.query("INSERT INTO chapter_revisions (chapter_id, revision, content) VALUES ($1, $2, $3::jsonb)", [id, next, JSON.stringify(content)]);
+                await client.query("UPDATE chapter_documents SET current_revision=$2, draft_revision=$2 WHERE id=$1", [id, next]);
                 return next;
             });
         },
@@ -83,11 +87,11 @@ export function createChapterRepository(pool) {
             return transact(async (client) => {
                 const current = await state(client, id, true);
                 if (!current || current.draftRevision === null)
-                    throw new ChapterNotFound('Chapter draft not found.');
+                    throw new ChapterNotFound("Chapter draft not found.");
                 check(current, expected);
                 if (current.publishedRevision !== current.draftRevision) {
-                    await client.query('INSERT INTO chapter_publications (chapter_id, revision) VALUES ($1, $2) ON CONFLICT DO NOTHING', [id, current.draftRevision]);
-                    await client.query('UPDATE chapter_documents SET published_revision=$2 WHERE id=$1', [id, current.draftRevision]);
+                    await client.query("INSERT INTO chapter_publications (chapter_id, revision) VALUES ($1, $2) ON CONFLICT DO NOTHING", [id, current.draftRevision]);
+                    await client.query("UPDATE chapter_documents SET published_revision=$2 WHERE id=$1", [id, current.draftRevision]);
                 }
                 return current.draftRevision;
             });
@@ -96,20 +100,24 @@ export function createChapterRepository(pool) {
             return transact(async (client) => {
                 const current = await state(client, id, true);
                 if (!current)
-                    throw new ChapterNotFound('Chapter not found.');
+                    throw new ChapterNotFound("Chapter not found.");
                 check(current, expected);
-                const publication = await client.query('SELECT 1 FROM chapter_publications WHERE chapter_id=$1 AND revision=$2', [id, sourceRevision]);
-                const source = publication.rowCount ? await revision(client, id, sourceRevision) : undefined;
+                const publication = await client.query("SELECT 1 FROM chapter_publications WHERE chapter_id=$1 AND revision=$2", [id, sourceRevision]);
+                const source = publication.rowCount
+                    ? await revision(client, id, sourceRevision)
+                    : undefined;
                 if (!source)
-                    throw new ChapterNotFound('Published chapter revision not found.');
+                    throw new ChapterNotFound("Published chapter revision not found.");
                 const next = current.currentRevision + 1;
-                await client.query('INSERT INTO chapter_revisions (chapter_id, revision, content) VALUES ($1, $2, $3::jsonb)', [id, next, JSON.stringify(source.content)]);
-                await client.query('INSERT INTO chapter_publications (chapter_id, revision, source_revision) VALUES ($1, $2, $3)', [id, next, sourceRevision]);
-                await client.query('UPDATE chapter_documents SET current_revision=$2, draft_revision=$2, published_revision=$2 WHERE id=$1', [id, next]);
+                await client.query("INSERT INTO chapter_revisions (chapter_id, revision, content) VALUES ($1, $2, $3::jsonb)", [id, next, JSON.stringify(source.content)]);
+                await client.query("INSERT INTO chapter_publications (chapter_id, revision, source_revision) VALUES ($1, $2, $3)", [id, next, sourceRevision]);
+                await client.query("UPDATE chapter_documents SET current_revision=$2, draft_revision=$2, published_revision=$2 WHERE id=$1", [id, next]);
                 return next;
             });
         },
-        async readPublished(id) { return published(pool, id); },
+        async readPublished(id) {
+            return published(pool, id);
+        },
         async readProgress(owner, id) {
             const result = await pool.query('SELECT revision, section_id AS "sectionId", version FROM student_chapter_progress WHERE owner_email=$1 AND chapter_id=$2', [owner, id]);
             return result.rows[0];
@@ -119,12 +127,13 @@ export function createChapterRepository(pool) {
                 return await transact(async (client) => {
                     const current = await state(client, id, true);
                     if (!current || current.publishedRevision === null)
-                        throw new ChapterNotFound('Published chapter not found.');
+                        throw new ChapterNotFound("Published chapter not found.");
                     if (current.publishedRevision !== chapterRevision)
-                        throw new ChapterConflict('Chapter changed; reload before saving progress.');
+                        throw new ChapterConflict("Chapter changed; reload before saving progress.");
                     const content = await revision(client, id, chapterRevision);
-                    if (!content || !content.content.sections.some(section => section.id === sectionId))
-                        throw new ChapterNotFound('Chapter section not found.');
+                    if (!content ||
+                        !content.content.sections.some((section) => section.id === sectionId))
+                        throw new ChapterNotFound("Chapter section not found.");
                     if (expected === 0) {
                         const inserted = await client.query(`INSERT INTO student_chapter_progress (owner_email, chapter_id, revision, section_id, version)
              VALUES ($1, $2, $3, $4, 1)
@@ -135,13 +144,16 @@ export function createChapterRepository(pool) {
            WHERE owner_email=$1 AND chapter_id=$2 AND version=$5
            RETURNING revision, section_id AS "sectionId", version`, [owner, id, chapterRevision, sectionId, expected]);
                     if (!updated.rows[0])
-                        throw new ChapterConflict('Progress changed; reload before saving.');
+                        throw new ChapterConflict("Progress changed; reload before saving.");
                     return updated.rows[0];
                 });
             }
             catch (error) {
-                if (expected === 0 && error instanceof Error && 'code' in error && error.code === '23505')
-                    throw new ChapterConflict('Progress changed; reload before saving.');
+                if (expected === 0 &&
+                    error instanceof Error &&
+                    "code" in error &&
+                    error.code === "23505")
+                    throw new ChapterConflict("Progress changed; reload before saving.");
                 throw error;
             }
         },
